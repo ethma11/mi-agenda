@@ -1,0 +1,217 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>Mi Agenda</title>
+<link rel="manifest" href="manifest.json">
+
+<style>
+body { font-family: 'Segoe UI', sans-serif; background-color: #121212; color: #e0e0e0; display: flex; flex-direction: column; align-items: center; padding: 20px; margin: 0; }
+h1 { color: #bb86fc; margin-bottom: 10px; }
+
+.controles { display: flex; align-items: center; background: #1e1e1e; padding: 10px 20px; border-radius: 50px; margin-bottom: 20px; border: 1px solid #333; }
+.visor-mes { width: 280px; text-align: center; font-size: 1.5rem; font-weight: bold; color: #bb86fc; }
+.controles button { background: #bb86fc; color: #121212; border: none; width: 40px; height: 40px; border-radius: 50%; cursor: pointer; }
+
+.calendario-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 8px; width: min(96vw, 1600px); }
+
+.dia-nombre { background: #bb86fc; color: #121212; text-align: center; padding: 10px; border-radius: 5px; font-weight: bold; }
+
+.celda-tarea { background: #1e1e1e; border: 1px solid #333; border-radius: 8px; min-height: 260px; padding: 12px 10px; display: flex; flex-direction: column; }
+.hoy { border: 2px solid #bb86fc !important; background: #251d2f !important; }
+
+.numero-dia { font-weight: bold; margin-bottom: 6px; color: #bb86fc; }
+
+.seccion-facu { background: #2c2c2c; border-radius: 6px; padding: 8px; margin-bottom: 10px; font-size: 13px; border-left: 3px solid #03dac6; }
+
+.clase-item { display: flex; justify-content: space-between; align-items: center; margin-bottom: 5px; gap: 8px; cursor: pointer; }
+
+.clase-item.seleccionado {
+    background: #bb86fc;
+    color: #121212;
+    border-radius: 4px;
+    padding: 2px;
+}
+
+.cancelada { text-decoration: line-through; color: #666; }
+
+.btn-cancelar-clase { cursor: pointer; font-size: 13px; color: #ff5555; }
+
+.titulo-entregas { font-size: 10px; color: #888; text-transform: uppercase; margin-bottom: 5px; border-bottom: 1px solid #333; }
+
+.contenedor-renglon { display: flex; gap: 5px; margin-bottom: 4px; }
+
+.renglon-input { flex-grow: 1; border: none; background: transparent; color: #b0b0b0; }
+
+.btn-check { width: 14px; height: 14px; border: 1px solid #555; border-radius: 50%; cursor: pointer; }
+.check-activo { background: #03dac6; }
+
+.celda-vacia { min-height: 260px; }
+</style>
+</head>
+
+<body>
+
+<h1>📅 Mi Agenda</h1>
+
+<div class="controles">
+<button onclick="cambiarMes(-1)">◀</button>
+<div id="nombreMes" class="visor-mes"></div>
+<button onclick="cambiarMes(1)">▶</button>
+</div>
+
+<div id="calendario" class="calendario-grid">
+<div class="dia-nombre">LUN</div><div class="dia-nombre">MAR</div><div class="dia-nombre">MIÉ</div>
+<div class="dia-nombre">JUE</div><div class="dia-nombre">VIE</div><div class="dia-nombre">SÁB</div><div class="dia-nombre">DOM</div>
+</div>
+
+<script>
+
+// --- RUTINA ---
+const rutinaFacu = {
+1: ["09:00 - 11:30 Bicicleta","13:00 - 16:00 - Cálculo","16:30 - 17:30 - Trote","18:00 - 20:00 POO"],
+2: ["10:00 - 12:00 - TC1","14:30 Enduro"],
+3: ["10:00 - 13:00 - Inglés","13:00 - 16:00 - Cálculo","16:30 - 17:30 - Empuje","18:00 - 20:00 POO"],
+4: ["10:00 - 13:00 - EDAT","13:45 - Natación","15:30 - 17:30 - POO","18:00 - 20:00 TC1"],
+5: ["09:00 - 12:00 - EDAT","14:30 - Enduro"],
+6: ["11:00 - Piernas","18:00 - Tire"],
+0: ["Descancito :)"]
+};
+
+let seleccionado = null;
+
+// --- INTERCAMBIO TÁCTIL ---
+function seleccionar(dia, idx) {
+    if (!seleccionado) {
+        seleccionado = { dia, idx };
+    } else {
+        let origen = rutinaFacu[seleccionado.dia];
+        let destino = rutinaFacu[dia];
+
+        let temp = origen[seleccionado.idx];
+        origen[seleccionado.idx] = destino[idx];
+        destino[idx] = temp;
+
+        seleccionado = null;
+    }
+    render();
+}
+
+// --- CALENDARIO ---
+const hoyReal = new Date();
+let anioVer = hoyReal.getFullYear();
+let mesVer = hoyReal.getMonth();
+const mesesNom = ["Enero","Febrero","Marzo","Abril","Mayo","Junio","Julio","Agosto","Septiembre","Octubre","Noviembre","Diciembre"];
+
+function colorPorTareas(cant) {
+    return ["#1e1e1e", "#1b5e20", "#f9a825", "#ef6c00", "#b71c1c"][Math.min(cant, 4)];
+}
+
+function guardar(clave, idx, campo, valor) {
+    let datos = JSON.parse(localStorage.getItem(clave) || '[{"t":"","c":false},{"t":"","c":false},{"t":"","c":false},{"t":"","c":false}]');
+    datos[idx][campo] = valor;
+    localStorage.setItem(clave, JSON.stringify(datos));
+    render();
+}
+
+function toggleClase(diaClave, indiceClase) {
+    let canceladas = JSON.parse(localStorage.getItem("cancel-"+diaClave) || "[]");
+    if(canceladas.includes(indiceClase)) {
+        canceladas = canceladas.filter(i => i !== indiceClase);
+    } else {
+        canceladas.push(indiceClase);
+    }
+    localStorage.setItem("cancel-"+diaClave, JSON.stringify(canceladas));
+    render();
+}
+
+function render() {
+    document.getElementById('nombreMes').innerText = `${mesesNom[mesVer]} ${anioVer}`;
+    document.querySelectorAll('.celda-tarea, .celda-vacia').forEach(c => c.remove());
+    const grid = document.getElementById('calendario');
+
+    let primerDia = new Date(Date.UTC(anioVer, mesVer, 1)).getUTCDay();
+    let huecos = (primerDia === 0) ? 6 : primerDia - 1;
+
+    for (let i = 0; i < huecos; i++) {
+        let div = document.createElement('div'); 
+        div.className = 'celda-vacia';
+        grid.appendChild(div);
+    }
+
+    let ultimoDia = new Date(Date.UTC(anioVer, mesVer + 1, 0)).getUTCDate();
+
+    for (let d = 1; d <= ultimoDia; d++) {
+        let celda = document.createElement('div');
+        celda.className = 'celda-tarea';
+        
+        let fechaLoop = new Date(Date.UTC(anioVer, mesVer, d));
+        let nroDiaSemana = fechaLoop.getUTCDay(); 
+        let claveDia = `${anioVer}-${mesVer}-${d}`;
+
+        if(d === hoyReal.getDate() && mesVer === hoyReal.getMonth() && anioVer === hoyReal.getFullYear()) {
+            celda.classList.add('hoy');
+        }
+
+        let htmlFacu = "";
+        let clasesHoy = rutinaFacu[nroDiaSemana];
+        let canceladas = JSON.parse(localStorage.getItem("cancel-"+claveDia) || "[]");
+
+        if(clasesHoy.length > 0) {
+            htmlFacu = `<div class="titulo-entregas">Horarios</div><div class="seccion-facu">`;
+            clasesHoy.forEach((clase, idx) => {
+                let isCancel = canceladas.includes(idx);
+                let esSel = seleccionado && seleccionado.dia === nroDiaSemana && seleccionado.idx === idx;
+
+                htmlFacu += `
+                <div class="clase-item ${isCancel ? 'cancelada' : ''} ${esSel ? 'seleccionado' : ''}"
+                     onclick="seleccionar(${nroDiaSemana}, ${idx})">
+
+                    <span>${clase}</span>
+
+                    <span class="btn-cancelar-clase" onclick="event.stopPropagation(); toggleClase('${claveDia}', ${idx})">
+                        ${isCancel ? '↺' : '✕'}
+                    </span>
+                </div>`;
+            });
+            htmlFacu += `</div>`;
+        }
+
+        let tareas = JSON.parse(localStorage.getItem(claveDia) || '[{"t":"","c":false},{"t":"","c":false},{"t":"","c":false},{"t":"","c":false}]');
+
+        let activas = tareas.filter(obj => obj.t.trim() !== "").length;
+        celda.style.backgroundColor = colorPorTareas(activas);
+
+        let htmlEntregas = `<div class="titulo-entregas">Entregas / Notas</div>`;
+        tareas.forEach((obj, i) => {
+            htmlEntregas += `
+            <div class="contenedor-renglon">
+                <div class="btn-check ${obj.c ? 'check-activo' : ''}" onclick="guardar('${claveDia}', ${i}, 'c', ${!obj.c})">
+                    ${obj.c ? '✓' : ''}
+                </div>
+                <input type="text" class="renglon-input" 
+                       value="${obj.t}" onchange="guardar('${claveDia}', ${i}, 't', this.value)">
+            </div>`;
+        });
+
+        celda.innerHTML = `<span class="numero-dia">${d}</span>${htmlFacu}${htmlEntregas}`;
+        grid.appendChild(celda);
+    }
+}
+
+function cambiarMes(dir) {
+    mesVer += dir;
+    if (mesVer > 11) { mesVer = 0; anioVer++; }
+    if (mesVer < 0) { mesVer = 11; anioVer--; }
+    render();
+}
+
+render();
+</script>
+<script>
+if ("serviceWorker" in navigator) {
+  navigator.serviceWorker.register("service-worker.js");
+}
+</script>
+</body>
+</html>
